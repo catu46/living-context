@@ -56,14 +56,22 @@ v1.0.141):
   "hashes": { "03_entregaveis/budget.xlsx": "a81c…" },
   "parts":  { "03_entregaveis/budget.xlsx": { "/Sheet1": "644b…" },
               "03_entregaveis/deck.pptx":   { "/slide[1]": "6343…", "/slide[2]": "81fd…" } },
-  "formulas": { "03_entregaveis/budget.xlsx": { "/Sheet1/A4": "SUM(A2:A3)" } }
+  "formulas": { "03_entregaveis/budget.xlsx": { "/Sheet1/A4": "SUM(A2:A3)" } },
+  "content":  { "03_entregaveis/budget.xlsx": { "/Sheet1/A2": "100" },
+                "03_entregaveis/deck.pptx":   { "/slide[1]/shape[@id=2]": "Q4" } }
 }
 ```
 - **`parts`** → one hash per **slide / sheet**, so a change localizes to `/slide[3]` or `/Sheet1` (§6.2), not
   just "the file changed".
 - **`formulas`** → per-cell formula map; its DIFF is **formula-by-formula**: *"/Sheet1/A4 changed from
-  `SUM(A2:A3)` to `SUM(A2:A3)+10`"*. (OfficeCLI keeps a 60s in-memory resident; `context.py` runs
-  `officecli close` before reading so it never sees a stale copy.)
+  `SUM(A2:A3)` to `SUM(A2:A3)+10`"*.
+- **`content`** → per-item **value/text** map (cell VALUES that aren't formulas; slide/shape/paragraph TEXT at
+  the shape level). Its DIFF pinpoints WHAT changed: *"A2: 100 → 150"*, *"slide title: Q4 → Q4 2026"*. **Capped**
+  at `CONTENT_CAP` (500) per file — a bigger sheet records a one-line summary instead of thousands of cells (for
+  a big spreadsheet the useful signal is *formulas* + *"lots changed"*, not every value).
+
+(OfficeCLI keeps a 60s in-memory resident; `context.py` runs `officecli close` before reading so it never sees a
+stale copy. All of the above verified against OfficeCLI v1.0.141.)
 
 ### `catalog.json` — the retrieval bridge (natural language → concept → files)
 ```json

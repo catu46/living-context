@@ -48,6 +48,12 @@ CONFIDENTIALITY = {"Public", "Internal", "Confidential", "Highly Confidential"}
 # office formats OfficeCLI (optional) can extract to JSON — see extract_office()
 OFFICE_EXTS = {"pptx", "xlsx", "docx"}
 OFFICECLI_TIMEOUT = 90  # seconds per file — don't let a stuck extraction hang the build
+CONTENT_CAP = 500       # a file over this many content items records a SUMMARY, not every item
+                        # (a huge sheet: "N items changed" + per-part hash + formulas, not 5000 rows)
+CONTAINER_TYPES = {"presentation", "workbook", "sheet", "slide", "row", "table"}
+# sub-text fragments whose text is already captured at the shape level — skip to
+# avoid recording the same string 3x (shape / paragraph / run)
+CONTENT_TEXT_SKIP = {"paragraph", "run", "textbody", "textframe", "line"}
 # knowledge/ files that are NOT concepts (no catalog entry)
 RESERVED_TYPES = {"index", "log", "agent-guide"}
 # dirs never inventoried as artifacts
@@ -254,22 +260,58 @@ def _office_formulas(root):
     return formulas
 
 
+def _office_content(root):
+    """Path -> user CONTENT (cell VALUES that aren't formulas; slide/shape/paragraph
+    TEXT). Its diff pinpoints WHAT changed: 'A2: 100 -> 150' or 'slide title:
+    Q4 -> Q4 2026'. Formula cells are skipped (tracked by _office_formulas); empty
+    and container nodes are skipped. CAPPED: a file with more than CONTENT_CAP items
+    records a one-line summary instead of every item — for a huge sheet the useful
+    signal is 'formulas' + 'lots changed', not 5000 cell values."""
+    content = {}
+    over = [False]
+
+    def walk(n):
+        if not isinstance(n, dict) or over[0]:
+            return
+        t = n.get("type")
+        if t == "cell":
+            if not (n.get("format") or {}).get("formula"):  # value cell (formula cells → _office_formulas)
+                v = n.get("text")
+                if v not in (None, ""):
+                    content[n.get("path") or "?"] = v
+        elif t not in CONTAINER_TYPES and t not in CONTENT_TEXT_SKIP:
+            txt = n.get("text")
+            if txt not in (None, ""):
+                content[n.get("path") or "?"] = txt
+        if len(content) > CONTENT_CAP:
+            over[0] = True
+            return
+        for c in (n.get("children") or []):
+            walk(c)
+
+    walk(root)
+    if over[0]:
+        return {"_summary": "more than %d content items — not tracked per-item; "
+                            "use the per-part hash + formulas" % CONTENT_CAP}
+    return content
+
+
 def extract_office(root, manifest_files, dry_run):
     """For each office artifact, run OfficeCLI, write .context/extracted/<file>.json
-    (verbatim), and derive per-part hashes (slide/sheet) + a per-cell formula map.
-    Returns (count, part_hashes, formula_maps, status)."""
+    (verbatim), and derive per-part hashes (slide/sheet), a per-cell formula map, and
+    a per-item content map (capped). Returns (count, {parts,formulas,content}, status)."""
     office = [rel for rel, m in manifest_files.items() if m["type"] in OFFICE_EXTS]
     if not office:
-        return 0, {}, {}, "no-office-files"
+        return 0, {}, "no-office-files"
     cli = shutil.which("officecli")
     if not cli:
-        return 0, {}, {}, "officecli-absent"
+        return 0, {}, "officecli-absent"
     if dry_run:
-        return len(office), {}, {}, "ready"
+        return len(office), {}, "ready"
 
     ex_dir = os.path.join(root, ".context", "extracted")
     os.makedirs(ex_dir, exist_ok=True)
-    part_hashes, formula_maps, ok, failed = {}, {}, 0, []
+    parts_all, formulas_all, content_all, ok, failed = {}, {}, {}, 0, []
     for rel in office:
         abspath = os.path.join(root, rel)
         # OfficeCLI keeps an in-memory resident (60s idle) after any command, and a
@@ -292,23 +334,24 @@ def extract_office(root, manifest_files, dry_run):
         except (subprocess.SubprocessError, ValueError, OSError):
             failed.append(rel)
             continue
-        # store the FULL envelope verbatim so nothing is lost
+        # store the FULL document verbatim so nothing is lost
         write_json(os.path.join(ex_dir, rel.replace(os.sep, "__") + ".json"),
                    {"generated": snapshot.now_iso(), "path": rel, "document": node})
         parts = _office_parts(node)
-        if parts:
-            part_hashes[rel] = {pid: hashlib.sha256(_canon(sub).encode("utf-8")).hexdigest()
-                                for pid, sub in parts.items()}
-        else:
-            part_hashes[rel] = {"whole": hashlib.sha256(_canon(node).encode("utf-8")).hexdigest()}
+        parts_all[rel] = ({pid: hashlib.sha256(_canon(sub).encode("utf-8")).hexdigest()
+                           for pid, sub in parts.items()} if parts
+                          else {"whole": hashlib.sha256(_canon(node).encode("utf-8")).hexdigest()})
         fx = _office_formulas(node)
         if fx:
-            formula_maps[rel] = fx
+            formulas_all[rel] = fx
+        ct = _office_content(node)
+        if ct:
+            content_all[rel] = ct
         ok += 1
     if failed:
         sys.stderr.write("officecli: could not extract %d file(s): %s\n"
                          % (len(failed), ", ".join(failed[:5]) + (" …" if len(failed) > 5 else "")))
-    return ok, part_hashes, formula_maps, "done"
+    return ok, {"parts": parts_all, "formulas": formulas_all, "content": content_all}, "done"
 
 
 # ---------- build ----------
@@ -364,7 +407,7 @@ def cmd_build(root, dry_run, do_extract=True):
         print("  state.json     (run control; pending_reviews preserved)")
         print("  events.jsonl   (append 1 build event)")
         if do_extract:
-            n_off, _, _, st = extract_office(root, manifest["files"], dry_run=True)
+            n_off, _, st = extract_office(root, manifest["files"], dry_run=True)
             if st == "ready":
                 print("  extracted/     (%d office file%s via OfficeCLI + per-part hashes)"
                       % (n_off, "" if n_off == 1 else "s"))
@@ -378,14 +421,14 @@ def cmd_build(root, dry_run, do_extract=True):
 
     # OfficeCLI extraction (optional): populate extracted/ + per-part hashes BEFORE
     # writing hashes.json so the part hashes are merged in.
-    ex_count, n_formulas = 0, 0
+    ex_count, n_formulas, n_content = 0, 0, 0
     if do_extract:
-        ex_count, part_hashes, formula_maps, _ = extract_office(root, manifest["files"], dry_run=False)
-        if part_hashes:
-            hashes["parts"] = part_hashes
-        if formula_maps:
-            hashes["formulas"] = formula_maps
-            n_formulas = sum(len(v) for v in formula_maps.values())
+        ex_count, derived, _ = extract_office(root, manifest["files"], dry_run=False)
+        for key in ("parts", "formulas", "content"):
+            if derived.get(key):
+                hashes[key] = derived[key]
+        n_formulas = sum(len(v) for v in derived.get("formulas", {}).values())
+        n_content = sum(len(v) for v in derived.get("content", {}).values())
 
     write_json(os.path.join(cdir, "manifest.json"), manifest)
     write_json(os.path.join(cdir, "hashes.json"), hashes)
@@ -412,14 +455,19 @@ def cmd_build(root, dry_run, do_extract=True):
     with open(ev_path, "a", encoding="utf-8") as f:
         f.write(json.dumps({"event_id": "evt-%04d" % (n_prev + 1), "type": "context_build",
                             "at": snapshot.now_iso(), "artifacts": n_art, "concepts": n_con,
-                            "extracted": ex_count, "formulas": n_formulas,
+                            "extracted": ex_count, "formulas": n_formulas, "content": n_content,
                             "status": "applied"}, ensure_ascii=False) + "\n")
 
     extra = ""
     if ex_count:
         extra = " · %d office extraction%s" % (ex_count, "" if ex_count == 1 else "s")
+        tracked = []
         if n_formulas:
-            extra += " (%d formula%s tracked)" % (n_formulas, "" if n_formulas == 1 else "s")
+            tracked.append("%d formula%s" % (n_formulas, "" if n_formulas == 1 else "s"))
+        if n_content:
+            tracked.append("%d content item%s" % (n_content, "" if n_content == 1 else "s"))
+        if tracked:
+            extra += " (" + ", ".join(tracked) + " tracked)"
     print("context.py :: built .context/ — %d artifacts, %d concepts, %d graph nodes, %d edges%s"
           % (n_art, n_con, len(graph_json["nodes"]), len(graph_json["edges"]), extra))
     return 0
