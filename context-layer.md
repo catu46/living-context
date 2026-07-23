@@ -9,9 +9,10 @@ regenerated from the real files + `knowledge/`.
 derives them: `manifest.json` + `hashes.json` from the real files, and `catalog.json` + `graph.json` **harvested
 from the `knowledge/` concept-page frontmatter + cross-links** — so the agent authors meaning ONCE (in the
 concept page) and the machine layer is generated, same input → same output. `context.py check <root>` is the
-**doctor** that validates integrity. `state.json` + `events.jsonl` are written by `build` too. Only `extracted/`
-(intermediate slide/tab/formula text) is still optional/not-yet-generated. So: **the agent's job is the concept
-pages; the `.context/` JSONs are downstream of them.** Related bundled scripts: `snapshot.py` (per-folder change
+**doctor** that validates integrity. `state.json` + `events.jsonl` are written by `build` too. `extracted/` is
+populated by `build` **when OfficeCLI is installed** (deck/sheet/doc content → JSON, + per-part hashes); without
+OfficeCLI it stays empty and hashes are file-level. So: **the agent's job is the concept pages; the `.context/`
+JSONs are downstream of them.** Related bundled scripts: `snapshot.py` (per-folder change
 memory for reconcile-on-open), `validate.py` (shape gate), `graph.py` (render `knowledge-graph.html`).
 
 ---
@@ -97,9 +98,10 @@ Slide text, tab names, formulas, page titles, metadata, JSON structures, referen
 **Best populated with [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)** (optional, preferred) — a
 dependency-free binary that emits deck/sheet/doc content as JSON (`officecli get <file> <path> --json`),
 deterministically. It also enables **part-level `hashes.json`** (hash each slide/tab, not just the file) so a
-change localizes to "slide 3" or "tab Resultados", per §6.2. Fall back to `python-pptx`/`openpyxl`/`unzip` when
-OfficeCLI isn't installed. (Wiring OfficeCLI into `context.py` — populate `extracted/` + part-level hashes — is
-the next build step; today `extracted/` is optional.)
+change localizes to "slide 3" or "tab Resultados", per §6.2. **`context.py build` does this automatically when
+OfficeCLI is on PATH** — writes `.context/extracted/<file>.json` per office artifact and `hashes.json["parts"]`.
+Not installed → `extracted/` stays empty, hashes are file-level; fall back to `python-pptx`/`openpyxl`/`unzip` for
+one-off reads.
 
 ---
 

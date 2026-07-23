@@ -202,8 +202,10 @@ Run once at setup (the discovery loop below feeds it). Detail per step in the re
 4. **Concepts** — identify core concepts, create pages in `knowledge/` (frontmatter with `id`, `type`, `title`,
    `aliases`, `source_files`, `local_documentation`, `last_verified` hash — block 3 in [shape.md](shape.md)).
 5. **Local documentation** — `index.md` + `overview.md` only in work-units that earn them; not everywhere.
-6. **Catalog & graph** — generate `.context/` (`catalog.json`, `graph.json`) from the real files + the wiki;
-   render `knowledge-graph.html` with `scripts/graph.py`.
+6. **Catalog & graph** — `python3 <skill-dir>/scripts/context.py build .` derives the whole `.context/` layer
+   (`manifest`/`hashes`/`catalog`/`graph`/`state`/`events`, + `extracted/` and per-part hashes if OfficeCLI is
+   installed) from the real files + the concept frontmatter; then `scripts/graph.py knowledge/` renders
+   `knowledge-graph.html`.
 7. **Validate** — links, IDs, frontmatter, paths, concept coverage, orphan docs, missing sources, duplicates
    (`scripts/validate.py`).
 8. **Report** — what was created/changed, concepts found, canonical sources, questions/conflicts, and which docs
@@ -373,9 +375,10 @@ concept.
   cross-links. **`context.py build` then DERIVES the whole machine layer deterministically** from that + the real
   files: `manifest.json`, `hashes.json`, `catalog.json`, `graph.json`, `state.json`, and an `events.jsonl` line.
   So there is no hand-written JSON: same input → same output. `context.py check` is the **doctor** (unique ids,
-  unique aliases, `source_files` resolve, graph edges reference real nodes, valid confidentiality). Only
-  `extracted/` (intermediate slide/tab/formula text) is still optional/not-yet-generated. This is the spec's
-  determinism boundary made real: deterministic to detect/map/validate/apply; agent to interpret (what a concept
+  unique aliases, `source_files` resolve, graph edges reference real nodes, valid confidentiality). `extracted/`
+  (slide/tab/formula text) + per-part hashes are populated by `build` **when OfficeCLI is installed** (else empty,
+  file-level hashes). This is the spec's determinism boundary made real: deterministic to detect/map/validate/apply;
+  agent to interpret (what a concept
   IS, which alias, which source) — and it writes that interpretation in ONE place, the concept page.
 - **The `.context/` JSONs don't make interpretation 100% deterministic** — they make the *mechanical* parts
   deterministic and hand the LLM a small, verifiable set of candidates instead of the whole project.

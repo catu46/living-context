@@ -50,5 +50,11 @@ heavy engine is always on and the non-engineer front door is an optional layer. 
 
 ## Requirements
 
-- `python3` for the `.context/` engine (`snapshot.py`, `validate.py`, `graph.py`). Degrades gracefully if absent
-  (still builds Markdown and chats; the change-tracking, graph and gate turn on once Python is installed).
+- `python3` for the `.context/` engine (`context.py`, `snapshot.py`, `validate.py`, `graph.py`). Degrades
+  gracefully if absent (still builds Markdown and chats; the change-tracking, graph and gate turn on once Python
+  is installed).
+- **[OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)** (optional, recommended when the folder has
+  PowerPoint/Excel/Word) — a dependency-free binary that reads/builds office files. `context.py build` uses it to
+  populate `.context/extracted/` + per-slide/tab hashes; the agent can also register its MCP server
+  (`officecli mcp claude`) for interactive reading/building. Without it, office reading falls back to
+  `python-pptx`/`openpyxl`/`unzip` and change detection stays file-level.
