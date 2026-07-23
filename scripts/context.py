@@ -448,6 +448,21 @@ def cmd_check(root):
         except (ValueError, OSError):
             err("manifest.json is not valid JSON")
 
+    # OfficeCLI availability — an office-heavy project should have it (a standard
+    # setup step, not a hard block: warn, never fail, since it's an external binary
+    # and a corporate machine may block the install).
+    office_present = False
+    for dp, dn, fns in os.walk(root):
+        dn[:] = [d for d in dn if d not in SKIP_DIRS and not d.startswith(".")]
+        if any(os.path.splitext(f)[1].lstrip(".").lower() in OFFICE_EXTS for f in fns):
+            office_present = True
+            break
+    if office_present and not shutil.which("officecli"):
+        warn("this project has PowerPoint/Excel/Word files but OfficeCLI is not installed — "
+             "decks/spreadsheets are tracked at file level only (no per-slide/tab detail). "
+             "Install (single binary, no deps): curl -fsSL https://d.officecli.ai/install.sh | bash  "
+             "(Windows: irm https://d.officecli.ai/install.ps1 | iex) — github.com/iOfficeAI/OfficeCLI")
+
     # Project Contract: confidentiality (from the consulting-bootstrap lineage)
     p_path = os.path.join(cdir, "project-profile.json")
     if os.path.isfile(p_path):
