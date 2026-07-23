@@ -226,6 +226,18 @@ deeper → converge (usually 2–3 rounds) → **PROPOSE → BUILD → fresh-eye
 - **PDF** via the Read tool's `pages` range. **Big spreadsheets** → used range + headers + dtypes + ~20 sample
   rows, never every cell.
 
+**Office files — OfficeCLI + its skills are the companion engine (optional; don't reinvent it).** living-context
+owns the *context* (`knowledge/` + `.context/`); it does not reimplement office read/write. When OfficeCLI is
+installed, use it to READ (above) AND lean on its **per-format skills** to build and QA a project's deliverables
+(`03_entregaveis/…`) — point the agent at the fitting one:
+- decks → `officecli-pptx` · `officecli-pitch-deck` · `morph-ppt` / `morph-ppt-3d`
+- spreadsheets/models/dashboards → `officecli-xlsx` · `officecli-financial-model` · `officecli-data-dashboard`
+- Word docs/forms/papers → `officecli-docx` · `officecli-word-form` · `officecli-academic-paper`
+
+living-context stays the source of context/truth and records what changed in `knowledge/log.md`; OfficeCLI
+produces and reads the artifacts. Neither depends on the other — if OfficeCLI is absent, fall back to
+`python-pptx`/`openpyxl`/`unzip`.
+
 **Fresh-eyes acceptance test (before self-maintenance takes over).** Deploy a subagent carrying **none** of this
 conversation's context, rooted at the built tree, as a brand-new agent who just opened the folder. Using ONLY the
 docs, have it (a) state what the project is and how it'd do a representative task, and (b) flag anything it could
@@ -314,9 +326,9 @@ concept.
   `resource:` and supersede pointers resolve, `status` valid, timestamps parse. Run it on the **generated tree**
   (`python3 <skill-dir>/scripts/validate.py <tree>`), after building and after real changes. Add a root
   `.okfignore` (one glob per line) to skip folders you deliberately don't document. Pair it with the fresh-eyes
-  comprehension check — ship only when both pass. *(Not yet script-enforced — verify by the agent + fresh-eyes
-  for now: `source_files:` resolution, alias uniqueness, and `.context/` JSON integrity. A `source_files`/alias
-  extension to this validator is the next build step.)*
+  comprehension check — ship only when both pass. *(`source_files:` resolution, alias uniqueness, and `.context/`
+  integrity are enforced by `context.py check` — the doctor — run alongside this shape gate. Kept separate on
+  purpose: `validate.py` = shape, `context.py check` = context, like a project `doctor`.)*
 - **[scripts/graph.py](scripts/graph.py)** — ONE graph for the whole bundle: `python3 <skill-dir>/scripts/graph.py
   <root>/knowledge` writes `knowledge/knowledge-graph.html` (nodes = concepts, edges = cross-links + supersedes,
   colored by `type`). Always use the bundled script as-is; re-run it on every real change. Data is embedded.

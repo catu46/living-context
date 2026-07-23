@@ -34,6 +34,9 @@ import os
 import re
 import json
 import argparse
+import hashlib
+import shutil
+import subprocess
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
@@ -42,6 +45,9 @@ import snapshot  # noqa: E402  (hashing/scan/now_iso/is_tracked)
 import graph     # noqa: E402  (parse_frontmatter/strip_code_fences/collect)
 
 CONFIDENTIALITY = {"Public", "Internal", "Confidential", "Highly Confidential"}
+# office formats OfficeCLI (optional) can extract to JSON — see extract_office()
+OFFICE_EXTS = {"pptx", "xlsx", "docx"}
+OFFICECLI_TIMEOUT = 90  # seconds per file — don't let a stuck extraction hang the build
 # knowledge/ files that are NOT concepts (no catalog entry)
 RESERVED_TYPES = {"index", "log", "agent-guide"}
 # dirs never inventoried as artifacts
@@ -184,6 +190,82 @@ def scan_artifacts(root):
     return out
 
 
+# ---------- OfficeCLI extraction (optional, preferred) ----------
+# Uses OfficeCLI (https://github.com/iOfficeAI/OfficeCLI) when present: a
+# dependency-free binary that reads pptx/xlsx/docx into JSON. We ONLY read
+# (`get ... --json`) — never edit — so it's purely additive and file-lock safe.
+# Not installed? Everything below is skipped; file-level hashes still work.
+
+def _canon(obj):
+    return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def _office_parts(doc):
+    """Best-effort, schema-TOLERANT: split an OfficeCLI `get / --depth N --json`
+    tree into its top-level parts (slides / sheets / sections) so each can be
+    hashed independently — a change then localizes to 'slide[3]' or 'Sheet1'
+    (spec §6.2), not just the whole file. Returns {part_id: subtree} or None if
+    the shape isn't recognized (caller falls back to a whole-file hash)."""
+    children = None
+    if isinstance(doc, list):
+        children = doc
+    elif isinstance(doc, dict):
+        for k in ("children", "slides", "sheets", "worksheets", "elements", "items", "nodes"):
+            v = doc.get(k)
+            if isinstance(v, list):
+                children = v
+                break
+    if not children:
+        return None
+    parts = {}
+    for i, ch in enumerate(children, 1):
+        pid = None
+        if isinstance(ch, dict):
+            pid = ch.get("path") or (str(ch.get("name") or ch.get("tag") or "part") + "[%d]" % i)
+        parts[pid or "part[%d]" % i] = ch
+    return parts
+
+
+def extract_office(root, manifest_files, dry_run):
+    """For each office artifact, run OfficeCLI to write .context/extracted/<file>.json
+    (verbatim) and derive per-part hashes. Returns (count, part_hashes, status)."""
+    office = [rel for rel, m in manifest_files.items() if m["type"] in OFFICE_EXTS]
+    if not office:
+        return 0, {}, "no-office-files"
+    cli = shutil.which("officecli")
+    if not cli:
+        return 0, {}, "officecli-absent"
+    if dry_run:
+        return len(office), {}, "ready"
+
+    ex_dir = os.path.join(root, ".context", "extracted")
+    os.makedirs(ex_dir, exist_ok=True)
+    part_hashes, ok, failed = {}, 0, []
+    for rel in office:
+        try:
+            r = subprocess.run([cli, "get", os.path.join(root, rel), "/", "--depth", "99", "--json"],
+                               capture_output=True, text=True, timeout=OFFICECLI_TIMEOUT)
+            if r.returncode != 0 or not r.stdout.strip():
+                failed.append(rel)
+                continue
+            doc = json.loads(r.stdout)
+        except (subprocess.SubprocessError, ValueError, OSError):
+            failed.append(rel)
+            continue
+        write_json(os.path.join(ex_dir, rel.replace(os.sep, "__") + ".json"), doc)
+        parts = _office_parts(doc)
+        if parts:
+            part_hashes[rel] = {pid: hashlib.sha256(_canon(sub).encode("utf-8")).hexdigest()
+                                for pid, sub in parts.items()}
+        else:
+            part_hashes[rel] = {"whole": hashlib.sha256(_canon(doc).encode("utf-8")).hexdigest()}
+        ok += 1
+    if failed:
+        sys.stderr.write("officecli: could not extract %d file(s): %s\n"
+                         % (len(failed), ", ".join(failed[:5]) + (" …" if len(failed) > 5 else "")))
+    return ok, part_hashes, "done"
+
+
 # ---------- build ----------
 
 def build_payloads(root):
@@ -222,7 +304,7 @@ def write_json(path, obj):
         f.write("\n")
 
 
-def cmd_build(root, dry_run):
+def cmd_build(root, dry_run, do_extract=True):
     cdir = os.path.join(root, ".context")
     manifest, hashes, catalog, graph_json, n_art, n_con = build_payloads(root)
 
@@ -236,9 +318,27 @@ def cmd_build(root, dry_run):
                  len(graph_json["edges"]), "" if len(graph_json["edges"]) == 1 else "s"))
         print("  state.json     (run control; pending_reviews preserved)")
         print("  events.jsonl   (append 1 build event)")
+        if do_extract:
+            n_off, _, st = extract_office(root, manifest["files"], dry_run=True)
+            if st == "ready":
+                print("  extracted/     (%d office file%s via OfficeCLI + per-part hashes)"
+                      % (n_off, "" if n_off == 1 else "s"))
+            elif st == "officecli-absent" and n_off == 0:
+                pass
+            elif st == "officecli-absent":
+                print("  extracted/     (OfficeCLI not installed — skipped; file-level hashes only)")
         return 0
 
     os.makedirs(cdir, exist_ok=True)
+
+    # OfficeCLI extraction (optional): populate extracted/ + per-part hashes BEFORE
+    # writing hashes.json so the part hashes are merged in.
+    ex_count = 0
+    if do_extract:
+        ex_count, part_hashes, _ = extract_office(root, manifest["files"], dry_run=False)
+        if part_hashes:
+            hashes["parts"] = part_hashes
+
     write_json(os.path.join(cdir, "manifest.json"), manifest)
     write_json(os.path.join(cdir, "hashes.json"), hashes)
     write_json(os.path.join(cdir, "catalog.json"), catalog)
@@ -264,10 +364,11 @@ def cmd_build(root, dry_run):
     with open(ev_path, "a", encoding="utf-8") as f:
         f.write(json.dumps({"event_id": "evt-%04d" % (n_prev + 1), "type": "context_build",
                             "at": snapshot.now_iso(), "artifacts": n_art, "concepts": n_con,
-                            "status": "applied"}, ensure_ascii=False) + "\n")
+                            "extracted": ex_count, "status": "applied"}, ensure_ascii=False) + "\n")
 
-    print("context.py :: built .context/ — %d artifacts, %d concepts, %d graph nodes, %d edges"
-          % (n_art, n_con, len(graph_json["nodes"]), len(graph_json["edges"])))
+    extra = (" · %d office extraction%s" % (ex_count, "" if ex_count == 1 else "s")) if ex_count else ""
+    print("context.py :: built .context/ — %d artifacts, %d concepts, %d graph nodes, %d edges%s"
+          % (n_art, n_con, len(graph_json["nodes"]), len(graph_json["edges"]), extra))
     return 0
 
 
@@ -382,13 +483,15 @@ def main(argv):
     ap.add_argument("command", choices=["build", "check"])
     ap.add_argument("root", nargs="?", default=".")
     ap.add_argument("--dry-run", action="store_true", help="build: preview, write nothing")
+    ap.add_argument("--no-extract", action="store_true",
+                    help="build: skip OfficeCLI extraction of pptx/xlsx/docx even if installed")
     a = ap.parse_args(argv[1:])
     root = os.path.abspath(a.root)
     if not os.path.isdir(root):
         sys.stderr.write("not a directory: %s\n" % root)
         return 2
     if a.command == "build":
-        return cmd_build(root, a.dry_run)
+        return cmd_build(root, a.dry_run, do_extract=not a.no_extract)
     return cmd_check(root)
 
 
