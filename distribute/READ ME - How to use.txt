@@ -1,0 +1,69 @@
+ORGANIZE A FOLDER WITH AI — download & use
+===========================================
+
+Pick one of your folders (decks, spreadsheets, PDFs, notes) and the AI sets it up
+so it can navigate it and answer questions — and it keeps itself updated as you
+and your teammates add and change files.
+
+You only need ONE file, and about 10 minutes the first time.
+
+
+STEP 1 — Download the right file
+--------------------------------
+  • macOS:    "Organize a folder with AI.command"
+  • Windows:  "Organize a folder with AI.bat"
+
+On GitHub: open the file for your computer, then click the download icon
+("Download raw file") near the top-right. It lands in your DOWNLOADS folder.
+(If a colleague sent it to you directly, just save it and go to Step 2. On Mac,
+ask them to send it ZIPPED — see the Mac note below.)
+
+
+STEP 2 — Put it somewhere handy
+-------------------------------
+From Downloads, drag it to your DESKTOP — or just double-click it there in
+Downloads. Either works.
+
+
+STEP 3 — Open it
+----------------
+Double-click the file. The FIRST time, your computer shows a one-time safety
+warning (normal — the file came from the internet):
+  • macOS:    right-click the file -> Open -> Open
+  • Windows:  "More info" -> "Run anyway"
+
+  >> MAC NOTE — if double-clicking just opens a text window:
+     macOS removes the "may run" permission from files downloaded from the web.
+     Easy fix: get it ZIPPED. Ask whoever shared it to right-click the file ->
+     Compress, send you the .zip, and double-click the .zip to unzip — the
+     unzipped file runs normally. (Windows .bat files don't have this issue.)
+
+
+STEP 4 — One-time setup (the app helps you)
+-------------------------------------------
+You need two things, once per computer. If either is missing, the app OFFERS to
+install it for you — just say yes.
+  1) An assistant — Claude Code OR Codex:
+       • Claude Code:  https://claude.com/claude-code
+       • Codex:        https://learn.chatgpt.com/docs/codex/cli
+  2) Python — powers the automatic "what changed" tracking. If missing, the app
+     asks and installs it (Mac: Apple's installer; Windows: winget), then
+     continues on its own. You can skip it too — setup and chat still work.
+
+
+STEP 5 — Use it
+---------------
+  1) Pick the folder you want to organize (a window opens).
+  2) Pick the assistant — 1 = Claude Code, 2 = Codex.
+  3) Done — the AI works in front of you. It may ask a few questions about the
+     folder (what it is, what to skip). That's normal.
+
+
+AFTER THAT
+----------
+  • To chat with a folder's files any time, double-click the "Talk to my files"
+    file that appears inside it.
+  • Create new folders/files as usual — next time you open the chat, ask
+    "what changed?" and it catches up (great for shared Drive/SharePoint folders).
+
+Questions? Ask whoever sent you this file.

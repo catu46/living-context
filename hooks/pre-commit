@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# git pre-commit hook (agent-friendly-docs) — block a commit that changes source
+# without updating that folder's knowledge/ docs. Deploy by copying this +
+# check-docs-fresh.sh into <repo>/.githooks/ and: git config core.hooksPath .githooks
+# Override a single commit with:  git commit --no-verify
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+CHK="$ROOT/.githooks/check-docs-fresh.sh"
+# Run via bash so a stripped +x bit (editor save, zip re-extract, Windows checkout)
+# doesn't silently fail the gate open. Only skip if the check is genuinely absent.
+[ -f "$CHK" ] || exit 0
+OUT="$(bash "$CHK" --staged)"; CODE=$?
+if [ "$CODE" -eq 3 ]; then
+  echo "$OUT" 1>&2
+  echo "" 1>&2
+  echo "Commit blocked: update the knowledge/ docs for the folders above, or re-run with --no-verify." 1>&2
+  exit 1
+fi
+exit 0
