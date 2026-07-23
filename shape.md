@@ -88,7 +88,9 @@ Depois de mudanças reais aqui, antes de terminar:
 1. Atualize o conceito afetado em `knowledge/<mirror-path>/` (ou crie um novo lá).
 2. APPEND uma linha em `knowledge/log.md` (nunca reescreva o passado). Restampe o `timestamp` do que tocou.
 3. SUPERSEDA — nunca apague — o que foi substituído (template 5).
-4. Atualize `.context/` (catalog/graph/manifest/hashes) e regenere o grafo: `python3 <skill-dir>/scripts/graph.py knowledge/`.
+4. Regenere a camada `.context/` e o grafo: `python3 <skill-dir>/scripts/context.py build .` (deriva
+   catalog/graph/manifest/hashes/state/events do conteúdo) + `python3 <skill-dir>/scripts/graph.py knowledge/`
+   (HTML). Rode o doctor: `python3 <skill-dir>/scripts/context.py check .`.
 5. Criou uma subpasta significativa nova? Adicione o roteador (CLAUDE.md + AGENTS.md) e a fatia do bundle
    `knowledge/<caminho>/index.md`. Se não souber se é significativa ou o que faz, PERGUNTE.
 Mude apenas o que a edição tocou.
@@ -281,11 +283,14 @@ Markdown files in every folder by obligation.
 
 ---
 
-## 9) `.context/` stubs
+## 9) `.context/` — generated, not hand-written
 
-The `.context/` files and their schemas are in [context-layer.md](context-layer.md). At build time create at
-least `project-profile.json` (the Contract), `manifest.json` + `hashes.json` (via `snapshot.py`), `catalog.json`
-and `graph.json` (from the concepts), and `state.json`. `events.jsonl` and `extracted/` fill in as the engine runs.
+Schemas: [context-layer.md](context-layer.md). You author **one** thing by hand: `project-profile.json` (the
+Project Contract — [contract.md](contract.md)). Everything else is **derived**: run
+`python3 <skill-dir>/scripts/context.py build .` and it writes `manifest.json` + `hashes.json` (from the real
+files) and `catalog.json` + `graph.json` (harvested from the concept-page frontmatter + cross-links above),
+inits `state.json`, and appends `events.jsonl`. So keep the concept pages right and the machine layer follows.
+Then `python3 <skill-dir>/scripts/context.py check .` (the doctor) gates integrity.
 
 ---
 

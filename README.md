@@ -36,7 +36,8 @@ modes.md            # Mode A/B, org sub-modes, KEEP-vs-REDESIGN, adaptive struct
 context-layer.md    # .context/ JSON schemas + the deterministic-vs-agent boundary
 contract.md         # the MECE document-type contract + the Project Contract + automation policy
 LAUNCHER.md WATCHER.md FORCING.md   # the optional front-door layer
-scripts/            # validate.py (shape gate) · snapshot.py (change-memory) · graph.py (render)
+scripts/            # context.py (derive .context/ + doctor) · validate.py (shape gate)
+                    #   snapshot.py (change-memory) · graph.py (render graph)
 hooks/  distribute/  assets/
 ```
 

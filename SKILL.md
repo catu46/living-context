@@ -216,9 +216,15 @@ evidence-based** (*"you said the Q3 model is canonical, but there's v8, v8_FINAL
 deeper → converge (usually 2–3 rounds) → **PROPOSE → BUILD → fresh-eyes verify.**
 
 **Reading any document** — read the content by default; the interview decides what to *skip*, not what to open.
-PDFs via the Read tool's `pages` range; modern `.pptx`/`.xlsx`/`.docx` are ZIP+XML (`python-pptx`/`openpyxl`/
-`python-docx`, or `unzip -p` the XML parts); legacy binaries via `textutil`/`soffice`; big spreadsheets → used
-range + headers + dtypes + ~20 sample rows, never every cell.
+- **Office files (`.pptx`/`.xlsx`/`.docx`) — prefer OfficeCLI when available.** [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)
+  is a single self-contained binary (no Python, no MS Office, offline, cross-platform, Apache-2.0) purpose-built
+  for agents: `officecli get deck.pptx /slide[1] --json`, `officecli view file.xlsx outline` extract text /
+  structure / sheet data / formulas as **JSON** — deterministic, ideal for populating `.context/extracted/` and
+  for slide/tab-level change detection. **Optional, not a hard dependency:** if it isn't installed, fall back to
+  `python-pptx`/`openpyxl`/`python-docx` or zero-install `unzip -p` on the XML parts; legacy binaries via
+  `textutil`/`soffice`.
+- **PDF** via the Read tool's `pages` range. **Big spreadsheets** → used range + headers + dtypes + ~20 sample
+  rows, never every cell.
 
 **Fresh-eyes acceptance test (before self-maintenance takes over).** Deploy a subagent carrying **none** of this
 conversation's context, rooted at the built tree, as a brand-new agent who just opened the folder. Using ONLY the
@@ -291,8 +297,17 @@ concept.
 
 ---
 
-## Validate + visualize
+## Build, validate, visualize
 
+- **[scripts/context.py](scripts/context.py)** (Python 3, stdlib only) — the **deterministic `.context/`
+  engine**. `python3 <skill-dir>/scripts/context.py build <root>` derives `manifest.json` + `hashes.json` (from
+  the real files) and `catalog.json` + `graph.json` (harvested from the `knowledge/` concept frontmatter +
+  cross-links), inits `state.json`, and appends an `events.jsonl` line — **no hand-written JSON**. `--dry-run`
+  previews without writing. `python3 <skill-dir>/scripts/context.py check <root>` is the **doctor**: unique
+  concept ids, unique aliases across concepts, `source_files` resolve, graph edges reference real nodes, valid
+  `confidentiality` — exit 1 on error, plus warnings for manifest drift / a missing Project Contract. Run `build`
+  after writing/updating concept pages and after real file changes; run `check` as a gate. Reuses `snapshot.py`
+  (hashing) and `graph.py` (parsing) so `graph.json` matches the rendered graph.
 - **[scripts/validate.py](scripts/validate.py)** (Python 3, stdlib only) — the **shape** gate: every meaningful
   folder has `AGENTS.md` + `CLAUDE.md`, the `@AGENTS.md` stub exact, the single `knowledge/` bundle exists with
   its `index.md`, every concept has a non-empty `type`, links resolve (relative + bundle-relative `/…`),
@@ -321,12 +336,15 @@ concept.
 - **Auto-load is a harness feature tied to the filenames `CLAUDE.md` / `AGENTS.md`.** Claude Code reads
   `CLAUDE.md`, not `AGENTS.md`; the `@AGENTS.md` stub bridges. `knowledge/` and `.context/` are opened on demand —
   that lazy boundary is the whole point.
-- **What in `.context/` is script-generated vs. agent-maintained (v1 honesty).** Bundled, deterministic today:
-  change detection / snapshot (`snapshot.py`), the shape gate (`validate.py`), the rendered graph (`graph.py`).
-  **Agent-maintained for now** (following the documented schemas in [context-layer.md](context-layer.md), like it
-  already authors `knowledge/` pages): `catalog.json`, `manifest.json`, `events.jsonl`, `state.json`, `extracted/`.
-  Dedicated generators for those are the next build step — until they exist, don't claim they're fully
-  deterministic; the agent writes them and `validate.py` + fresh-eyes check them.
+- **What in `.context/` is script-generated vs. agent-authored.** The agent authors **meaning ONCE** — in the
+  `knowledge/` concept-page frontmatter (`id`, `aliases`, `source_files`, `local_documentation`) and the markdown
+  cross-links. **`context.py build` then DERIVES the whole machine layer deterministically** from that + the real
+  files: `manifest.json`, `hashes.json`, `catalog.json`, `graph.json`, `state.json`, and an `events.jsonl` line.
+  So there is no hand-written JSON: same input → same output. `context.py check` is the **doctor** (unique ids,
+  unique aliases, `source_files` resolve, graph edges reference real nodes, valid confidentiality). Only
+  `extracted/` (intermediate slide/tab/formula text) is still optional/not-yet-generated. This is the spec's
+  determinism boundary made real: deterministic to detect/map/validate/apply; agent to interpret (what a concept
+  IS, which alias, which source) — and it writes that interpretation in ONE place, the concept page.
 - **The `.context/` JSONs don't make interpretation 100% deterministic** — they make the *mechanical* parts
   deterministic and hand the LLM a small, verifiable set of candidates instead of the whole project.
 - **Descriptions drift** from the artifacts they point at — which is why every doc carries a `timestamp`, every

@@ -5,11 +5,14 @@ Open this to build or maintain `.context/`. The `.context/` JSONs are **not** th
 maintenance deterministic, so the agent never re-discovers the whole project on each run. Everything here can be
 regenerated from the real files + `knowledge/`.
 
-**v1 status (be honest — also in [SKILL.md](SKILL.md)):** bundled deterministic scripts today are `snapshot.py`
-(change detection/hashes), `validate.py` (shape gate), `graph.py` (render). `catalog.json`, `manifest.json`,
-`events.jsonl`, `state.json`, `extracted/` are **agent-maintained** against the schemas below until dedicated
-generators exist. Where a file is agent-written, treat its schema as a contract you keep valid, not as script
-output you can trust blindly.
+**How this layer is produced (deterministic).** You do NOT hand-write these JSONs. **`context.py build <root>`**
+derives them: `manifest.json` + `hashes.json` from the real files, and `catalog.json` + `graph.json` **harvested
+from the `knowledge/` concept-page frontmatter + cross-links** — so the agent authors meaning ONCE (in the
+concept page) and the machine layer is generated, same input → same output. `context.py check <root>` is the
+**doctor** that validates integrity. `state.json` + `events.jsonl` are written by `build` too. Only `extracted/`
+(intermediate slide/tab/formula text) is still optional/not-yet-generated. So: **the agent's job is the concept
+pages; the `.context/` JSONs are downstream of them.** Related bundled scripts: `snapshot.py` (per-folder change
+memory for reconcile-on-open), `validate.py` (shape gate), `graph.py` (render `knowledge-graph.html`).
 
 ---
 
@@ -91,6 +94,12 @@ For audit, **idempotency** (never apply the same event twice), and diagnosis.
 
 ### `extracted/` — regenerable intermediate extractions
 Slide text, tab names, formulas, page titles, metadata, JSON structures, references found. All regenerable.
+**Best populated with [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)** (optional, preferred) — a
+dependency-free binary that emits deck/sheet/doc content as JSON (`officecli get <file> <path> --json`),
+deterministically. It also enables **part-level `hashes.json`** (hash each slide/tab, not just the file) so a
+change localizes to "slide 3" or "tab Resultados", per §6.2. Fall back to `python-pptx`/`openpyxl`/`unzip` when
+OfficeCLI isn't installed. (Wiring OfficeCLI into `context.py` — populate `extracted/` + part-level hashes — is
+the next build step; today `extracted/` is optional.)
 
 ---
 

@@ -95,12 +95,18 @@ def resolve(base_dir, target, root):
         target = mt.group(1).strip()
     if target.startswith("<") and target.endswith(">"):
         target = target[1:-1].strip()
-    if not target or is_url(target) or target.startswith("#") or target.startswith("/"):
+    if not target or is_url(target) or target.startswith("#"):
         return None
     target = target.split("#", 1)[0]
     if not target:
         return None
-    p = os.path.normpath(os.path.join(base_dir, target))
+    # OKF bundle-relative link ("/..." from the bundle root) — the style shape.md
+    # recommends for cross-links — resolves from ROOT (which IS the bundle when
+    # graph.py is run on knowledge/). Otherwise it's relative to the linking file.
+    if target.startswith("/"):
+        p = os.path.normpath(os.path.join(root, target.lstrip("/")))
+    else:
+        p = os.path.normpath(os.path.join(base_dir, target))
     if not os.path.isfile(p):
         return None
     return os.path.relpath(p, root)

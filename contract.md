@@ -50,6 +50,9 @@ project:
   type: continuous-operation          # consulting | research | continuous-operation | product | mixed
   objective: Track and accelerate sellers at the start of their journey
   lifecycle: continuous               # one-off | continuous
+  confidentiality: Confidential       # REQUIRED — Public | Internal | Confidential | Highly Confidential
+  client: <client name>               # for consulting engagements
+  engagement: <engagement name>
 
 organization:
   current_structure: preserve         # preserve | reorganize
@@ -93,6 +96,16 @@ based on observable patterns — never execute a relevant reorganization silentl
 
 > *This folder started getting weekly meeting notes — want a permanent meetings area?*
 > *12 files now share the same theme — create a "Financial Results" front?*
+
+**`confidentiality` is REQUIRED** (from the consulting-bootstrap lineage) — one of `Public` / `Internal` /
+`Confidential` / `Highly Confidential`. The doctor (`context.py check`) errors on an invalid value and warns when
+it's missing. Client data stays **inside** the project folder — never copy confidential content into a global
+skill/agent home.
+
+**Scaffolding is deterministic, not hand-improvised.** Like a `project init` CLI, prefer building the structure
+from fixed rules (the profiles in [modes.md](modes.md)) and previewing before writing — reorganizations run
+`--dry-run` first ([context-layer.md](context-layer.md) / the migrations file in §4). The doctor
+(`context.py check`) plays the role of a `project doctor` health check for the `.context/` layer.
 
 ---
 
