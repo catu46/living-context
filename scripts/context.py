@@ -200,70 +200,115 @@ def _canon(obj):
     return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
-def _office_parts(doc):
-    """Best-effort, schema-TOLERANT: split an OfficeCLI `get / --depth N --json`
-    tree into its top-level parts (slides / sheets / sections) so each can be
-    hashed independently — a change then localizes to 'slide[3]' or 'Sheet1'
-    (spec §6.2), not just the whole file. Returns {part_id: subtree} or None if
-    the shape isn't recognized (caller falls back to a whole-file hash)."""
-    children = None
-    if isinstance(doc, list):
-        children = doc
-    elif isinstance(doc, dict):
-        for k in ("children", "slides", "sheets", "worksheets", "elements", "items", "nodes"):
-            v = doc.get(k)
-            if isinstance(v, list):
-                children = v
-                break
-    if not children:
+def _officecli_root(doc):
+    """Unwrap OfficeCLI's real envelope {success, data:{results:[node]}} to the
+    root document node (verified against v1.0.141). Tolerates a bare node too."""
+    if not isinstance(doc, dict):
+        return None
+    if doc.get("success") is False:
+        return None
+    data = doc.get("data")
+    if isinstance(data, dict):
+        results = data.get("results")
+        if isinstance(results, list) and results and isinstance(results[0], dict):
+            return results[0]
+    if "children" in doc or "path" in doc:  # already a bare node (other/older shape)
+        return doc
+    return None
+
+
+def _office_parts(root):
+    """Top-level parts = the root node's children (slides for pptx, sheets for
+    xlsx). Part id = each child's `path` (/slide[1], /Sheet1), so a change
+    localizes to that part (spec §6.2). None when there are no children."""
+    if not isinstance(root, dict):
+        return None
+    children = root.get("children")
+    if not isinstance(children, list) or not children:
         return None
     parts = {}
     for i, ch in enumerate(children, 1):
-        pid = None
-        if isinstance(ch, dict):
-            pid = ch.get("path") or (str(ch.get("name") or ch.get("tag") or "part") + "[%d]" % i)
-        parts[pid or "part[%d]" % i] = ch
+        pid = (ch.get("path") if isinstance(ch, dict) else None) or ("part[%d]" % i)
+        parts[pid] = ch
     return parts
 
 
+def _office_formulas(root):
+    """Walk the whole tree; collect every cell formula as {cell_path: formula}
+    (OfficeCLI puts it at node.format.formula for type==cell). The DIFF of this
+    map is the formula-by-formula layer: exactly which cell's formula changed,
+    and from/to what."""
+    formulas = {}
+
+    def walk(n):
+        if not isinstance(n, dict):
+            return
+        if n.get("type") == "cell":
+            f = (n.get("format") or {}).get("formula")
+            if f:
+                formulas[n.get("path") or "?"] = f
+        for c in (n.get("children") or []):
+            walk(c)
+
+    walk(root)
+    return formulas
+
+
 def extract_office(root, manifest_files, dry_run):
-    """For each office artifact, run OfficeCLI to write .context/extracted/<file>.json
-    (verbatim) and derive per-part hashes. Returns (count, part_hashes, status)."""
+    """For each office artifact, run OfficeCLI, write .context/extracted/<file>.json
+    (verbatim), and derive per-part hashes (slide/sheet) + a per-cell formula map.
+    Returns (count, part_hashes, formula_maps, status)."""
     office = [rel for rel, m in manifest_files.items() if m["type"] in OFFICE_EXTS]
     if not office:
-        return 0, {}, "no-office-files"
+        return 0, {}, {}, "no-office-files"
     cli = shutil.which("officecli")
     if not cli:
-        return 0, {}, "officecli-absent"
+        return 0, {}, {}, "officecli-absent"
     if dry_run:
-        return len(office), {}, "ready"
+        return len(office), {}, {}, "ready"
 
     ex_dir = os.path.join(root, ".context", "extracted")
     os.makedirs(ex_dir, exist_ok=True)
-    part_hashes, ok, failed = {}, 0, []
+    part_hashes, formula_maps, ok, failed = {}, {}, 0, []
     for rel in office:
+        abspath = os.path.join(root, rel)
+        # OfficeCLI keeps an in-memory resident (60s idle) after any command, and a
+        # stale resident can serve OLD content to `get`. Release it first so we read
+        # the CURRENT bytes on disk (harmless if no resident exists; we never edit).
         try:
-            r = subprocess.run([cli, "get", os.path.join(root, rel), "/", "--depth", "99", "--json"],
+            subprocess.run([cli, "close", abspath], capture_output=True, timeout=OFFICECLI_TIMEOUT)
+        except (subprocess.SubprocessError, OSError):
+            pass
+        try:
+            r = subprocess.run([cli, "get", abspath, "/", "--depth", "99", "--json"],
                                capture_output=True, text=True, timeout=OFFICECLI_TIMEOUT)
             if r.returncode != 0 or not r.stdout.strip():
                 failed.append(rel)
                 continue
-            doc = json.loads(r.stdout)
+            node = _officecli_root(json.loads(r.stdout))
+            if node is None:
+                failed.append(rel)
+                continue
         except (subprocess.SubprocessError, ValueError, OSError):
             failed.append(rel)
             continue
-        write_json(os.path.join(ex_dir, rel.replace(os.sep, "__") + ".json"), doc)
-        parts = _office_parts(doc)
+        # store the FULL envelope verbatim so nothing is lost
+        write_json(os.path.join(ex_dir, rel.replace(os.sep, "__") + ".json"),
+                   {"generated": snapshot.now_iso(), "path": rel, "document": node})
+        parts = _office_parts(node)
         if parts:
             part_hashes[rel] = {pid: hashlib.sha256(_canon(sub).encode("utf-8")).hexdigest()
                                 for pid, sub in parts.items()}
         else:
-            part_hashes[rel] = {"whole": hashlib.sha256(_canon(doc).encode("utf-8")).hexdigest()}
+            part_hashes[rel] = {"whole": hashlib.sha256(_canon(node).encode("utf-8")).hexdigest()}
+        fx = _office_formulas(node)
+        if fx:
+            formula_maps[rel] = fx
         ok += 1
     if failed:
         sys.stderr.write("officecli: could not extract %d file(s): %s\n"
                          % (len(failed), ", ".join(failed[:5]) + (" …" if len(failed) > 5 else "")))
-    return ok, part_hashes, "done"
+    return ok, part_hashes, formula_maps, "done"
 
 
 # ---------- build ----------
@@ -319,7 +364,7 @@ def cmd_build(root, dry_run, do_extract=True):
         print("  state.json     (run control; pending_reviews preserved)")
         print("  events.jsonl   (append 1 build event)")
         if do_extract:
-            n_off, _, st = extract_office(root, manifest["files"], dry_run=True)
+            n_off, _, _, st = extract_office(root, manifest["files"], dry_run=True)
             if st == "ready":
                 print("  extracted/     (%d office file%s via OfficeCLI + per-part hashes)"
                       % (n_off, "" if n_off == 1 else "s"))
@@ -333,11 +378,14 @@ def cmd_build(root, dry_run, do_extract=True):
 
     # OfficeCLI extraction (optional): populate extracted/ + per-part hashes BEFORE
     # writing hashes.json so the part hashes are merged in.
-    ex_count = 0
+    ex_count, n_formulas = 0, 0
     if do_extract:
-        ex_count, part_hashes, _ = extract_office(root, manifest["files"], dry_run=False)
+        ex_count, part_hashes, formula_maps, _ = extract_office(root, manifest["files"], dry_run=False)
         if part_hashes:
             hashes["parts"] = part_hashes
+        if formula_maps:
+            hashes["formulas"] = formula_maps
+            n_formulas = sum(len(v) for v in formula_maps.values())
 
     write_json(os.path.join(cdir, "manifest.json"), manifest)
     write_json(os.path.join(cdir, "hashes.json"), hashes)
@@ -364,9 +412,14 @@ def cmd_build(root, dry_run, do_extract=True):
     with open(ev_path, "a", encoding="utf-8") as f:
         f.write(json.dumps({"event_id": "evt-%04d" % (n_prev + 1), "type": "context_build",
                             "at": snapshot.now_iso(), "artifacts": n_art, "concepts": n_con,
-                            "extracted": ex_count, "status": "applied"}, ensure_ascii=False) + "\n")
+                            "extracted": ex_count, "formulas": n_formulas,
+                            "status": "applied"}, ensure_ascii=False) + "\n")
 
-    extra = (" · %d office extraction%s" % (ex_count, "" if ex_count == 1 else "s")) if ex_count else ""
+    extra = ""
+    if ex_count:
+        extra = " · %d office extraction%s" % (ex_count, "" if ex_count == 1 else "s")
+        if n_formulas:
+            extra += " (%d formula%s tracked)" % (n_formulas, "" if n_formulas == 1 else "s")
     print("context.py :: built .context/ — %d artifacts, %d concepts, %d graph nodes, %d edges%s"
           % (n_art, n_con, len(graph_json["nodes"]), len(graph_json["edges"]), extra))
     return 0

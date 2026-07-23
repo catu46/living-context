@@ -47,9 +47,23 @@ memory for reconcile-on-open), `validate.py` (shape gate), `graph.py` (render `k
 Knows which files exist; detects creation/removal/move; avoids reprocessing intact files; records the last-index
 state.
 
-### `hashes.json` — content/part hashes
-Hashes of content, sheets, slides, or extracted parts — so you can distinguish *saved again* from *content really
-changed*, a change localized to one tab/slide, and a file *moved without content change*.
+### `hashes.json` — content / part hashes / formulas
+File-level hashes (`hashes`) distinguish *saved again* from *content really changed* and a *move without change*.
+When OfficeCLI is installed, `context.py build` adds two more layers for office files (verified against OfficeCLI
+v1.0.141):
+```json
+{
+  "hashes": { "03_entregaveis/budget.xlsx": "a81c…" },
+  "parts":  { "03_entregaveis/budget.xlsx": { "/Sheet1": "644b…" },
+              "03_entregaveis/deck.pptx":   { "/slide[1]": "6343…", "/slide[2]": "81fd…" } },
+  "formulas": { "03_entregaveis/budget.xlsx": { "/Sheet1/A4": "SUM(A2:A3)" } }
+}
+```
+- **`parts`** → one hash per **slide / sheet**, so a change localizes to `/slide[3]` or `/Sheet1` (§6.2), not
+  just "the file changed".
+- **`formulas`** → per-cell formula map; its DIFF is **formula-by-formula**: *"/Sheet1/A4 changed from
+  `SUM(A2:A3)` to `SUM(A2:A3)+10`"*. (OfficeCLI keeps a 60s in-memory resident; `context.py` runs
+  `officecli close` before reading so it never sees a stale copy.)
 
 ### `catalog.json` — the retrieval bridge (natural language → concept → files)
 ```json

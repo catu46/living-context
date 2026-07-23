@@ -222,7 +222,9 @@ deeper → converge (usually 2–3 rounds) → **PROPOSE → BUILD → fresh-eye
   is a single self-contained binary (no Python, no MS Office, offline, cross-platform, Apache-2.0) purpose-built
   for agents: `officecli get deck.pptx /slide[1] --json`, `officecli view file.xlsx outline` extract text /
   structure / sheet data / formulas as **JSON** — deterministic, ideal for populating `.context/extracted/` and
-  for slide/tab-level change detection. **Optional, not a hard dependency:** if it isn't installed, fall back to
+  for **slide/tab-level AND formula-by-formula** change detection (`context.py build` writes per-slide/sheet
+  hashes + a per-cell formula map; verified against OfficeCLI v1.0.141). **Optional, not a hard dependency:** if
+  it isn't installed, fall back to
   `python-pptx`/`openpyxl`/`python-docx` or zero-install `unzip -p` on the XML parts; legacy binaries via
   `textutil`/`soffice`.
 - **PDF** via the Read tool's `pages` range. **Big spreadsheets** → used range + headers + dtypes + ~20 sample
@@ -376,8 +378,9 @@ concept.
   files: `manifest.json`, `hashes.json`, `catalog.json`, `graph.json`, `state.json`, and an `events.jsonl` line.
   So there is no hand-written JSON: same input → same output. `context.py check` is the **doctor** (unique ids,
   unique aliases, `source_files` resolve, graph edges reference real nodes, valid confidentiality). `extracted/`
-  (slide/tab/formula text) + per-part hashes are populated by `build` **when OfficeCLI is installed** (else empty,
-  file-level hashes). This is the spec's determinism boundary made real: deterministic to detect/map/validate/apply;
+  (slide/tab/formula text) + per-slide/sheet hashes + a per-cell formula map are populated by `build` **when
+  OfficeCLI is installed** (else empty, file-level hashes) — so change detection reaches slide/tab and
+  formula-by-formula. This is the spec's determinism boundary made real: deterministic to detect/map/validate/apply;
   agent to interpret (what a concept
   IS, which alias, which source) — and it writes that interpretation in ONE place, the concept page.
 - **The `.context/` JSONs don't make interpretation 100% deterministic** — they make the *mechanical* parts
