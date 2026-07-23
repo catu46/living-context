@@ -238,14 +238,25 @@ living-context stays the source of context/truth and records what changed in `kn
 produces and reads the artifacts. Neither depends on the other — if OfficeCLI is absent, fall back to
 `python-pptx`/`openpyxl`/`unzip`.
 
-**Install it as a standard setup step when the folder has office files (offer, don't force).** During bootstrap,
-if the project contains any `.pptx`/`.xlsx`/`.docx` and `officecli` isn't on PATH, **offer to install it right
-then** — one command, consent, default yes — explaining plainly why (*"so I can read your decks and spreadsheets
-properly and tell you exactly what changed — a slide or a tab, not just 'the file changed'"*):
-`curl -fsSL https://d.officecli.ai/install.sh | bash` (Windows: `irm https://d.officecli.ai/install.ps1 | iex`).
-Skip the offer if there are no office files. Do NOT hard-block on it (a corporate machine may forbid the install;
-a folder may have zero office files) — `context.py check` **warns** while it's missing on an office-heavy project,
-and the fallback keeps things working. This mirrors the launcher's guided-install pattern.
+**Two channels to OfficeCLI — use the right one:**
+- **MCP server, for the AGENT (preferred for interactive work).** OfficeCLI has a built-in MCP server — register
+  it in one command: `officecli mcp claude` (also `cursor` / `vscode` / `lmstudio`; `officecli mcp list` to
+  check). It exposes every document operation as **native MCP tools over JSON-RPC — no shell** — which is the
+  clean channel for reading a deck/sheet in chat (catch-up, answering a question) and for building deliverables
+  with the per-format skills.
+- **CLI subprocess, for the SCRIPT.** `context.py build` shells `officecli get … --json` to populate
+  `.context/extracted/` + per-part hashes deterministically. It's a headless script, so it uses the CLI directly,
+  not MCP. (Both drive the same binary.)
+
+**Install + register as a standard setup step when the folder has office files (offer, don't force).** During
+bootstrap, if the project contains any `.pptx`/`.xlsx`/`.docx` and `officecli` isn't on PATH, **offer to install
+it right then** — one command, consent, default yes — explaining plainly why (*"so I can read your decks and
+spreadsheets properly and tell you exactly what changed — a slide or a tab, not just 'the file changed'"*):
+`curl -fsSL https://d.officecli.ai/install.sh | bash` (Windows: `irm https://d.officecli.ai/install.ps1 | iex`),
+then `officecli mcp claude` to give the agent the tools. Skip the offer if there are no office files. Do NOT
+hard-block (a corporate machine may forbid the install; a folder may have zero office files) — `context.py check`
+**warns** while it's missing on an office-heavy project, and the fallback keeps things working. This mirrors the
+launcher's guided-install pattern.
 
 **Fresh-eyes acceptance test (before self-maintenance takes over).** Deploy a subagent carrying **none** of this
 conversation's context, rooted at the built tree, as a brand-new agent who just opened the folder. Using ONLY the
