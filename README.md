@@ -55,6 +55,9 @@ heavy engine is always on and the non-engineer front door is an optional layer. 
   is installed).
 - **[OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)** (optional, recommended when the folder has
   PowerPoint/Excel/Word) — a dependency-free binary that reads/builds office files. `context.py build` uses it to
-  populate `.context/extracted/` + per-slide/tab hashes; the agent can also register its MCP server
-  (`officecli mcp claude`) for interactive reading/building. Without it, office reading falls back to
+  populate `.context/extracted/` and **three layers of change detection** (verified against OfficeCLI v1.0.141):
+  per-slide/sheet **part hashes** (*where* — "slide 3 / Sheet1 changed"), a per-cell **formula** map
+  (*formula-by-formula* — "A4: `SUM(A2:A3)` → `+10`"), and a per-item **content** map (*value/text* —
+  "A2: 100 → 150", "title: Q4 → Q4 2026"; capped for huge sheets). The agent can also register its MCP server
+  (`officecli mcp claude`) for interactive reading/building. Without OfficeCLI, office reading falls back to
   `python-pptx`/`openpyxl`/`unzip` and change detection stays file-level.
